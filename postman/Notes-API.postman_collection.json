@@ -1,0 +1,330 @@
+{
+  "info": {
+    "_postman_id": "c4e8a1b2-7f3d-4a90-9c12-notesapi0001",
+    "name": "Notes API",
+    "description": "Postman collection for the NestJS notes-api.\n\n**Run in this order**\n1. Register — saves `accessToken` immediately, OR\n2. Login — OTP is logged on the server (valid 5 minutes) → set `otp` → Verify OTP — saves `accessToken`\n3. Create Folder — saves `folderId`\n4. Create Note — uses `{{folderId}}` so the note is stored in that folder\n5. List / Get / Update / Delete notes\n\nProtected routes use `Authorization: Bearer {{accessToken}}` (collection auth).\nAuth and health requests override that with no auth.\n\nPassword must be strong: at least 6 characters, with upper, lower, number, and symbol (example: `Test@123`).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{accessToken}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Hello World",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/",
+              "host": ["{{baseUrl}}"],
+              "path": [""]
+            },
+            "description": "Root check. Returns plain text Hello World!."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Register",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.access_token) {",
+                  "    pm.environment.set('accessToken', json.access_token);",
+                  "    pm.collectionVariables.set('accessToken', json.access_token);",
+                  "  }",
+                  "  if (json.data && json.data.email) {",
+                  "    pm.environment.set('email', json.data.email);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{name}}\",\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/register",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "register"]
+            },
+            "description": "Create a user and receive a JWT immediately.\n\nBody: name, email, password.\nPassword must be strong (min 6, upper, lower, number, symbol).\nSaves accessToken from access_token."
+          },
+          "response": []
+        },
+        {
+          "name": "Login",
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/login",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "login"]
+            },
+            "description": "Check credentials and send an OTP.\n\nReturns { \"message\": \"OTP sent successfully\" }.\nThe OTP is a random 6-digit code written to the server log. Copy it into the otp environment variable, then call Verify OTP. It expires in 5 minutes."
+          },
+          "response": []
+        },
+        {
+          "name": "Verify OTP",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  const token = json.data && json.data.access_token;",
+                  "  if (token) {",
+                  "    pm.environment.set('accessToken', token);",
+                  "    pm.collectionVariables.set('accessToken', token);",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": { "type": "noauth" },
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"otp\": \"{{otp}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/verify-otp",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "verify-otp"]
+            },
+            "description": "Verify the OTP from the server log and receive a JWT.\n\nBody: email, otp.\nSaves accessToken from data.access_token."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Folders",
+      "item": [
+        {
+          "name": "Create Folder",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.environment.set('folderId', String(json.id));",
+                  "    pm.collectionVariables.set('folderId', String(json.id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{folderName}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/folder",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "folder"]
+            },
+            "description": "Create a folder for the authenticated user.\n\nBody: name (required, unique per user).\nSaves folderId for Create Note."
+          },
+          "response": []
+        },
+        {
+          "name": "List Folders",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/folder",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "folder"]
+            },
+            "description": "List folders owned by the authenticated user, including a note count."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Notes",
+      "item": [
+        {
+          "name": "Create Note",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code === 200 || pm.response.code === 201) {",
+                  "  const json = pm.response.json();",
+                  "  if (json.id) {",
+                  "    pm.environment.set('noteId', String(json.id));",
+                  "    pm.collectionVariables.set('noteId', String(json.id));",
+                  "  }",
+                  "}"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My first note\",\n  \"content\": \"This is the note content.\",\n  \"folderId\": {{folderId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/notes",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notes"]
+            },
+            "description": "Create a note for the authenticated user.\n\nBody: title, content, optional folderId (integer).\nCreate Folder first so {{folderId}} is a number. A string folderId fails validation and is not saved.\nSaves noteId."
+          },
+          "response": []
+        },
+        {
+          "name": "List Notes",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notes?take=10&skip=0",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notes"],
+              "query": [
+                {
+                  "key": "take",
+                  "value": "10",
+                  "description": "Page size (default 10)"
+                },
+                {
+                  "key": "skip",
+                  "value": "0",
+                  "description": "Offset (default 0)"
+                },
+                {
+                  "key": "search",
+                  "value": "",
+                  "description": "Optional filter on title and content",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List notes owned by the authenticated user. Optional take, skip, and search."
+          },
+          "response": []
+        },
+        {
+          "name": "Get Note by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notes", "{{noteId}}"]
+            },
+            "description": "Get one note by id for the authenticated user."
+          },
+          "response": []
+        },
+        {
+          "name": "Update Note",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Updated note title\",\n  \"content\": \"Updated note content.\",\n  \"folderId\": {{folderId}}\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notes", "{{noteId}}"]
+            },
+            "description": "Update a note you own. title, content, and folderId are all optional. folderId must be an integer."
+          },
+          "response": []
+        },
+        {
+          "name": "Delete Note",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/notes/{{noteId}}",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "notes", "{{noteId}}"]
+            },
+            "description": "Delete a note owned by the authenticated user."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
