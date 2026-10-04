@@ -18,7 +18,19 @@ export class NotesService {
 
   //create
   async create(createNoteDto: CreateNoteDto, userId: number) {
-    this.logger.log(`Notes created ${createNoteDto.title} successfully`);
+    if (createNoteDto.folderId) {
+      const folder = await this.PrismaService.folder.findFirst({
+        where: {
+          id: createNoteDto.folderId,
+          userId: userId,
+        },
+      });
+
+      if (!folder) {
+        throw new NotFoundException('Folder not found');
+      }
+    }
+
     const notes = await this.PrismaService.note.create({
       data: {
         title: createNoteDto.title,
@@ -27,6 +39,8 @@ export class NotesService {
         folderId: createNoteDto.folderId,
       },
     });
+
+    this.logger.log(`Notes created ${createNoteDto.title} successfully`);
 
     return notes;
   }
@@ -40,6 +54,7 @@ export class NotesService {
       take,
       where: {
         userId,
+        deletedAt: null,
         ...buildSearchFilter(search, ['title', 'content']),
       },
     });
@@ -87,10 +102,13 @@ export class NotesService {
   }
 
   async remove(id: number, userId: number) {
+    // Find the note only if it belongs to the logged-in user
+    // and has not already been soft deleted.
     const note = await this.PrismaService.note.findFirst({
       where: {
         id,
         userId,
+        deletedAt: null,
       },
     });
 
@@ -98,11 +116,31 @@ export class NotesService {
       throw new NotFoundException('Note not found');
     }
 
-    await this.PrismaService.note.delete({
+    // Soft delete:
+    // The note is not removed from the database.
+    // We only set deletedAt to the current date/time.
+    await this.PrismaService.note.update({
       where: {
-        id,
+        id: note.id,
+      },
+      data: {
+        deletedAt: new Date(),
       },
     });
+
+    // -------------------------------------------------------
+    // HARD DELETE (For future reference)
+    // -------------------------------------------------------
+    // Hard delete permanently removes the note from the database.
+    // Use this only if you intentionally want to permanently
+    // remove the record.
+    //
+    // await this.PrismaService.note.delete({
+    //   where: {
+    //     id: note.id,
+    //   },
+    // });
+    // -------------------------------------------------------
 
     return {
       message: 'Note deleted successfully',
