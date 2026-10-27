@@ -1,3 +1,4 @@
+import { Cron } from '@nestjs/schedule';
 import { buildSearchFilter } from './../utils/prisma-search.util';
 import { PrismaService } from 'src/prisma.service';
 import {
@@ -11,11 +12,10 @@ import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 
 @Injectable()
-export class NotesService {
-  private readonly logger = new Logger(NotesService.name);
+export class CronService {
+  private readonly logger = new Logger(CronService.name);
 
   constructor(private readonly PrismaService: PrismaService) {}
-
   //create
   async create(createNoteDto: CreateNoteDto, userId: number) {
     if (createNoteDto.folderId) {
@@ -145,5 +145,25 @@ export class NotesService {
     return {
       message: 'Note deleted successfully',
     };
+  }
+  // Runs every day at 2:00 AM
+  @Cron('0 2 * * *')
+  async deleteOldNotes() {
+    const thirtyDaysAgo = new Date();
+
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+    const result = await this.PrismaService.note.deleteMany({
+      where: {
+        deletedAt: {
+          not: null,
+          lt: thirtyDaysAgo,
+        },
+      },
+    });
+
+    this.logger.log(
+      `Permanently deleted ${result.count} notes older than 30 days`,
+    );
   }
 }

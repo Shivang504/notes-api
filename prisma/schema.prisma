@@ -13,6 +13,11 @@ datasource db {
   provider = "postgresql"
 }
 
+enum SharePermission {
+  READ
+  EDIT
+}
+
 model User {
   id         Int      @id @default(autoincrement())
   name       String
@@ -25,6 +30,7 @@ model User {
   otpExpiredAt DateTime?
 
   folders Folder[]
+  sharedNotes NoteShare[]
 }
 
 model Note {
@@ -40,6 +46,24 @@ model Note {
 
   folderId Int?
   folder   Folder? @relation(fields: [folderId], references:[id], onDelete: SetNull)
+  shares  NoteShare[]
+}
+
+// fields: [noteId]	Uses the noteId field in the current model as the foreign key.
+// references: [id]	Connects noteId to the id field in the Note model.
+// onDelete: Cascade	If the referenced note is deleted, its related records are automatically deleted.
+
+model NoteShare {
+  id         Int   @id @default(autoincrement())
+  noteId     Int
+  note       Note  @relation(fields: [noteId], references:[id], onDelete: Cascade)
+  userId     Int
+  user        User  @relation(fields: [userId], references:[id], onDelete: Cascade)
+  permission SharePermission @default(READ)
+  created_at  DateTime @default(now())
+
+  // Ensure a note cannot be shared with the same user twice
+  @@unique([noteId, userId])
 }
 
 model Folder {
