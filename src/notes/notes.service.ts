@@ -2,18 +2,19 @@ import { Cron } from '@nestjs/schedule';
 import { buildSearchFilter } from './../utils/prisma-search.util';
 import { PrismaService } from 'src/prisma.service';
 import {
+  BadRequestException,
   ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
-  UseGuards,
 } from '@nestjs/common';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
+import { ShareNoteDto } from './dto/share-note.dto';
 
 @Injectable()
-export class CronService {
-  private readonly logger = new Logger(CronService.name);
+export class NotesService {
+  private readonly logger = new Logger(NotesService.name);
 
   constructor(private readonly PrismaService: PrismaService) {}
   //create
@@ -66,6 +67,16 @@ export class CronService {
       where: {
         id,
         userId,
+        OR: [
+          { userId }, // Caller is the owner
+          { shares: { some: { userId } } }, // Note is shared with caller
+        ],
+      },
+      include: {
+        shares: {
+          where: { userId },
+          select: { permission: true },
+        },
       },
     });
 
@@ -146,6 +157,80 @@ export class CronService {
       message: 'Note deleted successfully',
     };
   }
+
+  //  Share a note
+
+  async shareNote(noteId: number, ownerId: number, dto: ShareNoteDto) {
+    const note = await this.PrismaService.note.findFirst({
+      where: { id: noteId, userId: ownerId, deletedAt: null },
+    });
+    if (!note) {
+      throw new NotFoundException(
+        'Note not found or you do not have permission to share it',
+      );
+    }
+
+    // Find the recipient user
+    const recipient = await this.PrismaService.user.findUnique({
+      where: { email: dto.email },
+    });
+    if (!recipient) {
+      throw new NotFoundException(`User with email "${dto.email}" not found`);
+    }
+
+    // Cannot share with yourself
+    if (recipient.id === ownerId) {
+      throw new BadRequestException('You cannot share a note with yourself');
+    }
+
+    // Upsert so if already shared, it updates the permission instead of failing
+    const share = await this.PrismaService.noteShare.upsert({
+      where: {
+        noteId_userId: {
+          noteId,
+          userId: recipient.id,
+        },
+      },
+      update: {
+        permission: dto.permission,
+      },
+      create: {
+        noteId,
+        userId: recipient.id,
+        permission: dto.permission,
+      },
+    });
+
+    return { message: `Note shared successfully with ${dto.email}`, share };
+  }
+
+  async getSharedWithMe(userId: number) {
+    return this.PrismaService.noteShare.findMany({
+      where: { userId },
+      include: {
+        note: {
+          include: {
+            user: { select: { id: true, name: true, email: true } }, // Owner details
+          },
+        },
+      },
+    });
+  }
+
+  // . Revoke share access
+  async revokeShare(noteId: number, ownerId: number, targetUserId: number) {
+    const note = await this.PrismaService.note.findFirst({
+      where: { id: noteId, userId: ownerId },
+    });
+    if (!note) {
+      throw new ForbiddenException('Only the note owner can revoke sharing');
+    }
+    await this.PrismaService.noteShare.deleteMany({
+      where: { noteId, userId: targetUserId },
+    });
+    return { message: 'Share access revoked successfully' };
+  }
+
   // Runs every day at 2:00 AM
   @Cron('0 2 * * *')
   async deleteOldNotes() {

@@ -16,6 +16,7 @@ import { NotesService } from './notes.service';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
 import { AuthGuard } from 'src/auth/auth.guard';
+import { ShareNoteDto } from './dto/share-note.dto';
 
 //api/notes
 @Controller('/api/notes')
@@ -73,5 +74,33 @@ export class NotesController {
     @Request() req: { user: { sub: number } },
   ) {
     return this.notesService.remove(+id, req?.user?.sub);
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('shared/with-me')
+  getSharedWithMe(@Request() req: { user: { sub: number } }) {
+    return this.notesService.getSharedWithMe(req.user.sub);
+  }
+
+  // POST /api/notes/:id/share
+  @UseGuards(AuthGuard)
+  @Post(':id/share')
+  shareNote(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() shareNoteDto: ShareNoteDto,
+    @Request() req: { user: { sub: number } },
+  ) {
+    return this.notesService.shareNote(id, req.user.sub, shareNoteDto);
+  }
+
+  // DELETE /api/notes/:id/share/:targetUserId
+  @UseGuards(AuthGuard)
+  @Delete(':id/share/:targetUserId')
+  revokeShare(
+    @Param('id', ParseIntPipe) id: number,
+    @Param('targetUserId', ParseIntPipe) targetUserId: number,
+    @Request() req: { user: { sub: number } },
+  ) {
+    return this.notesService.revokeShare(id, req.user.sub, targetUserId);
   }
 }
