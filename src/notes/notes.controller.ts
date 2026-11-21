@@ -52,6 +52,12 @@ export class NotesController {
   }
 
   @UseGuards(AuthGuard)
+  @Get('shared/with-me')
+  getSharedWithMe(@Request() req: { user: { sub: number } }) {
+    return this.notesService.getSharedWithMe(req.user.sub);
+  }
+
+  @UseGuards(AuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string, @Request() req: { user: { sub: number } }) {
     return this.notesService.findOne(+id, req.user?.sub);
@@ -74,12 +80,6 @@ export class NotesController {
     @Request() req: { user: { sub: number } },
   ) {
     return this.notesService.remove(+id, req?.user?.sub);
-  }
-
-  @UseGuards(AuthGuard)
-  @Get('shared/with-me')
-  getSharedWithMe(@Request() req: { user: { sub: number } }) {
-    return this.notesService.getSharedWithMe(req.user.sub);
   }
 
   // POST /api/notes/:id/share
