@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { CreateNoteDto } from './dto/create-note.dto';
 import { UpdateNoteDto } from './dto/update-note.dto';
-import { ShareNoteDto } from './dto/share-note.dto';
+import { ShareNoteDto, SharePermission } from './dto/share-note.dto';
 
 @Injectable()
 export class NotesService {
@@ -63,10 +63,10 @@ export class NotesService {
   }
 
   async findOne(id: number, userId: number) {
-    const note = await this.PrismaService.note.findUnique({
+    const note = await this.PrismaService.note.findFirst({
       where: {
         id,
-        userId,
+        deletedAt: null,
         OR: [
           { userId }, // Caller is the owner
           { shares: { some: { userId } } }, // Note is shared with caller
@@ -88,18 +88,31 @@ export class NotesService {
   }
 
   async update(id: number, updateNoteDto: UpdateNoteDto, userId: number) {
-    const note = await this.PrismaService.note.findUnique({
+    const note = await this.PrismaService.note.findFirst({
       where: {
         id,
+        deletedAt: null,
       },
     });
 
     if (!note) {
-      throw new NotFoundException();
+      throw new NotFoundException('Note not found');
     }
 
-    if (note?.userId !== userId) {
-      throw new ForbiddenException('Not Allowed');
+    const isOwner = note.userId === userId;
+
+    if (!isOwner) {
+      const editShare = await this.PrismaService.noteShare.findFirst({
+        where: {
+          noteId: id,
+          userId,
+          permission: SharePermission.EDIT,
+        },
+      });
+
+      if (!editShare) {
+        throw new ForbiddenException('Not Allowed');
+      }
     }
 
     const updated = await this.PrismaService.note.update({
