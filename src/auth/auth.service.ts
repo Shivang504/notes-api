@@ -44,12 +44,17 @@ export class AuthService {
 
     this.logger.log(`User ${registerDto.email} registered successfully`);
 
-    const payload = { sub: (await newUser).id, email: (await newUser).email };
+    const payload = {
+      sub: (await newUser).id,
+      email: (await newUser).email,
+      role: (await newUser).role,
+    };
 
     return {
       data: {
         name: (await newUser).name,
         email: (await newUser).email,
+        role: (await newUser).role,
       },
       access_token: await this.jwtService.signAsync(payload),
     };
@@ -139,12 +144,14 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync({
       sub: user.id,
       email: user.email,
+      role: user.role,
     });
 
     return {
       data: {
         name: user.name,
         email: user.email,
+        role: user.role,
         access_token: accessToken,
       },
     };

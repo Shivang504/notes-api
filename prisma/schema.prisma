@@ -18,8 +18,14 @@ enum SharePermission {
   EDIT
 }
 
+enum Role {
+  USER
+  SUPER_ADMIN
+}
+
 model User {
   id         Int      @id @default(autoincrement())
+  role Role @default(USER)
   name       String
   email      String   @unique
   password   String
