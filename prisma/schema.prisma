@@ -23,6 +23,7 @@ enum Role {
   SUPER_ADMIN
 }
 
+
 model User {
   id         Int      @id @default(autoincrement())
   role Role @default(USER)
@@ -37,6 +38,7 @@ model User {
 
   folders Folder[]
   sharedNotes NoteShare[]
+  activityLogs ActivityLog[]
 }
 
 model Note {
@@ -85,3 +87,22 @@ model Folder {
   @@unique([name, userId])
 }
 
+enum ActionType {
+  CREATE
+  UPDATE
+  DELETE
+  SHARE
+  REVOKE_SHARE
+}
+
+
+model ActivityLog {
+  id         Int        @id @default(autoincrement())
+  userId     Int
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action     ActionType
+  entity     String     // e.g., 'NOTE', 'FOLDER'
+  entityId   Int?       // e.g., note id
+  details    Json?      // વધારાની માહિતી (e.g. { sharedWith: "user@example.com", noteTitle: "My Note" })
+  created_at DateTime   @default(now())
+}

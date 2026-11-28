@@ -8,6 +8,7 @@ import { NotesModule } from './notes/notes.module';
 import { FolderModule } from './folder/folder.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { CronService } from './cron/cron.service';
+import { ActivityLogModule } from './activity-log/activity-log.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { CronService } from './cron/cron.service';
     NotesModule,
     FolderModule,
     ScheduleModule.forRoot(),
+    ActivityLogModule,
   ],
   controllers: [AppController],
   providers: [AppService, CronService],

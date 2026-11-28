@@ -17,33 +17,45 @@ export class NotesService {
   private readonly logger = new Logger(NotesService.name);
 
   constructor(private readonly PrismaService: PrismaService) {}
-  //create
+
+  // Create note with activity log in a transaction
   async create(createNoteDto: CreateNoteDto, userId: number) {
-    if (createNoteDto.folderId) {
-      const folder = await this.PrismaService.folder.findFirst({
-        where: {
-          id: createNoteDto.folderId,
+    return await this.PrismaService.$transaction(async (tx) => {
+      // 1. If folderId is provided, check if it belongs to the user
+      if (createNoteDto.folderId) {
+        const folder = await tx.folder.findFirst({
+          where: { id: createNoteDto.folderId, userId },
+        });
+        if (!folder) {
+          throw new NotFoundException('Folder not found');
+        }
+      }
+
+      // 2. Create the note
+      const note = await tx.note.create({
+        data: {
+          title: createNoteDto.title,
+          content: createNoteDto.content,
           userId: userId,
+          folderId: createNoteDto.folderId,
         },
       });
 
-      if (!folder) {
-        throw new NotFoundException('Folder not found');
-      }
-    }
+      // 3. Record Activity Log
+      await tx.activityLog.create({
+        data: {
+          userId: userId,
+          action: 'CREATE',
+          entity: 'NOTE',
+          entityId: note.id,
+          details: {
+            title: note.title,
+          },
+        },
+      });
 
-    const notes = await this.PrismaService.note.create({
-      data: {
-        title: createNoteDto.title,
-        content: createNoteDto.content,
-        userId: userId,
-        folderId: createNoteDto.folderId,
-      },
+      return note;
     });
-
-    this.logger.log(`Notes created ${createNoteDto.title} successfully`);
-
-    return notes;
   }
 
   async findAll(
@@ -87,134 +99,141 @@ export class NotesService {
     return note;
   }
 
+  // Update note with activity log in a transaction
   async update(id: number, updateNoteDto: UpdateNoteDto, userId: number) {
-    const note = await this.PrismaService.note.findFirst({
-      where: {
-        id,
-        deletedAt: null,
-      },
-    });
-
-    if (!note) {
-      throw new NotFoundException('Note not found');
-    }
-
-    const isOwner = note.userId === userId;
-
-    if (!isOwner) {
-      const editShare = await this.PrismaService.noteShare.findFirst({
+    return await this.PrismaService.$transaction(async (tx) => {
+      const note = await tx.note.findFirst({
         where: {
-          noteId: id,
-          userId,
-          permission: SharePermission.EDIT,
+          id,
+          deletedAt: null,
         },
       });
 
-      if (!editShare) {
-        throw new ForbiddenException('Not Allowed');
+      if (!note) {
+        throw new NotFoundException('Note not found');
       }
-    }
 
-    const updated = await this.PrismaService.note.update({
-      where: {
-        id,
-      },
-      data: updateNoteDto,
-    });
+      const isOwner = note.userId === userId;
 
-    return updated;
-  }
+      if (!isOwner) {
+        const editShare = await tx.noteShare.findFirst({
+          where: {
+            noteId: id,
+            userId,
+            permission: SharePermission.EDIT,
+          },
+        });
 
-  async remove(id: number, userId: number) {
-    // Find the note only if it belongs to the logged-in user
-    // and has not already been soft deleted.
-    const note = await this.PrismaService.note.findFirst({
-      where: {
-        id,
-        userId,
-        deletedAt: null,
-      },
-    });
+        if (!editShare) {
+          throw new ForbiddenException('Not Allowed');
+        }
+      }
 
-    if (!note) {
-      throw new NotFoundException('Note not found');
-    }
-
-    // Soft delete:
-    // The note is not removed from the database.
-    // We only set deletedAt to the current date/time.
-    await this.PrismaService.note.update({
-      where: {
-        id: note.id,
-      },
-      data: {
-        deletedAt: new Date(),
-      },
-    });
-
-    // -------------------------------------------------------
-    // HARD DELETE (For future reference)
-    // -------------------------------------------------------
-    // Hard delete permanently removes the note from the database.
-    // Use this only if you intentionally want to permanently
-    // remove the record.
-    //
-    // await this.PrismaService.note.delete({
-    //   where: {
-    //     id: note.id,
-    //   },
-    // });
-    // -------------------------------------------------------
-
-    return {
-      message: 'Note deleted successfully',
-    };
-  }
-
-  //  Share a note
-
-  async shareNote(noteId: number, ownerId: number, dto: ShareNoteDto) {
-    const note = await this.PrismaService.note.findFirst({
-      where: { id: noteId, userId: ownerId, deletedAt: null },
-    });
-    if (!note) {
-      throw new NotFoundException(
-        'Note not found or you do not have permission to share it',
-      );
-    }
-
-    // Find the recipient user
-    const recipient = await this.PrismaService.user.findUnique({
-      where: { email: dto.email },
-    });
-    if (!recipient) {
-      throw new NotFoundException(`User with email "${dto.email}" not found`);
-    }
-
-    // Cannot share with yourself
-    if (recipient.id === ownerId) {
-      throw new BadRequestException('You cannot share a note with yourself');
-    }
-
-    // Upsert so if already shared, it updates the permission instead of failing
-    const share = await this.PrismaService.noteShare.upsert({
-      where: {
-        noteId_userId: {
-          noteId,
-          userId: recipient.id,
+      const updated = await tx.note.update({
+        where: {
+          id,
         },
-      },
-      update: {
-        permission: dto.permission,
-      },
-      create: {
-        noteId,
-        userId: recipient.id,
-        permission: dto.permission,
-      },
-    });
+        data: updateNoteDto,
+      });
 
-    return { message: `Note shared successfully with ${dto.email}`, share };
+      await tx.activityLog.create({
+        data: {
+          userId,
+          action: 'UPDATE',
+          entity: 'NOTE',
+          entityId: id,
+          details: {
+            updatedFields: Object.keys(updateNoteDto),
+          },
+        },
+      });
+
+      return updated;
+    });
+  }
+
+  // Soft delete note with activity log in a transaction
+  async remove(id: number, userId: number) {
+    return await this.PrismaService.$transaction(async (tx) => {
+      const note = await tx.note.findFirst({
+        where: { id, userId, deletedAt: null },
+      });
+
+      if (!note) {
+        throw new NotFoundException('Note not found');
+      }
+
+      // Soft delete
+      await tx.note.update({
+        where: { id: note.id },
+        data: { deletedAt: new Date() },
+      });
+
+      // Log the deletion
+      await tx.activityLog.create({
+        data: {
+          userId,
+          action: 'DELETE',
+          entity: 'NOTE',
+          entityId: note.id,
+          details: { title: note.title },
+        },
+      });
+
+      return { message: 'Note deleted successfully' };
+    });
+  }
+
+  // Share a note with activity log in a transaction
+  async shareNote(noteId: number, ownerId: number, dto: ShareNoteDto) {
+    return await this.PrismaService.$transaction(async (tx) => {
+      // 1. Verify note exists and belongs to caller
+      const note = await tx.note.findFirst({
+        where: { id: noteId, userId: ownerId, deletedAt: null },
+      });
+      if (!note) {
+        throw new NotFoundException(
+          'Note not found or you do not have permission to share it',
+        );
+      }
+
+      // 2. Find recipient user
+      const recipient = await tx.user.findUnique({
+        where: { email: dto.email },
+      });
+      if (!recipient) {
+        throw new NotFoundException(`User with email "${dto.email}" not found`);
+      }
+      if (recipient.id === ownerId) {
+        throw new BadRequestException('You cannot share a note with yourself');
+      }
+
+      // 3. Upsert note share
+      const share = await tx.noteShare.upsert({
+        where: {
+          noteId_userId: { noteId, userId: recipient.id },
+        },
+        update: { permission: dto.permission },
+        create: { noteId, userId: recipient.id, permission: dto.permission },
+      });
+
+      // 4. Create Activity Log
+      await tx.activityLog.create({
+        data: {
+          userId: ownerId,
+          action: 'SHARE',
+          entity: 'NOTE',
+          entityId: noteId,
+          details: {
+            sharedWithUserEmail: recipient.email,
+            sharedWithUserId: recipient.id,
+            permission: dto.permission,
+          },
+        },
+      });
+
+      return { message: `Note shared successfully with ${dto.email}`, share };
+    });
   }
 
   async getSharedWithMe(userId: number) {
@@ -230,25 +249,38 @@ export class NotesService {
     });
   }
 
-  // . Revoke share access
+  // Revoke share access with activity log in a transaction
   async revokeShare(noteId: number, ownerId: number, targetUserId: number) {
-    const note = await this.PrismaService.note.findFirst({
-      where: { id: noteId, userId: ownerId },
+    return await this.PrismaService.$transaction(async (tx) => {
+      const note = await tx.note.findFirst({
+        where: { id: noteId, userId: ownerId },
+      });
+      if (!note) {
+        throw new ForbiddenException('Only the note owner can revoke sharing');
+      }
+
+      await tx.noteShare.deleteMany({
+        where: { noteId, userId: targetUserId },
+      });
+
+      await tx.activityLog.create({
+        data: {
+          userId: ownerId,
+          action: 'REVOKE_SHARE',
+          entity: 'NOTE',
+          entityId: noteId,
+          details: { revokedUserId: targetUserId },
+        },
+      });
+
+      return { message: 'Share access revoked successfully' };
     });
-    if (!note) {
-      throw new ForbiddenException('Only the note owner can revoke sharing');
-    }
-    await this.PrismaService.noteShare.deleteMany({
-      where: { noteId, userId: targetUserId },
-    });
-    return { message: 'Share access revoked successfully' };
   }
 
   // Runs every day at 2:00 AM
   @Cron('0 2 * * *')
   async deleteOldNotes() {
     const thirtyDaysAgo = new Date();
-
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
     const result = await this.PrismaService.note.deleteMany({
